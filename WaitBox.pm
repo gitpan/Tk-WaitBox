@@ -4,12 +4,10 @@
 ##	WaitBox - a reusable Tk-widget	##
 ##		  Wait Dialog		##
 ##					##
-##	Version 1.2			##
+##	Version 1.3			##
 ##					##
 ##	Brent B. Powers	(B2Pi)		##
-##	Merrill Lynch			##
-##	powers@swaps-comm.ml.com	##
-##					##
+##	Powers@B2Pi.com			##
 ##					##
 ##########################################
 ##########################################
@@ -20,11 +18,161 @@
 ##    Object Oriented Wait Dialog for TkPerl
 ##    (Apologies to John Stoffel and Stephen O. Lidie)
 ##
-
 ## Changes:
 ## Ver 1.1 Changed show to Show, unshow to unShow, and general
 ##         cleanup for perl5.002 gamma
 ## Ver 1.2 Changed to general distribution, add VERSION and Version
+## Ver 1.3 Added -takefocus param, on suggestion of Ben Hochstedler
+##	   <benh@med.ge.com>, some other stuff
+##
+###############################################################################
+###############################################################################
+
+package Tk::WaitBox;
+
+use strict;
+use Tk::Toplevel;
+
+@Tk::WaitBox::ISA = qw (Tk::Toplevel);
+
+Tk::Widget->Construct('WaitBox');
+
+$Tk::WaitBox::VERSION = '1.3';
+
+### A couple of convenience variables
+my(@wd_fullpack) = (-expand => 1, -fill => 'both');
+my(@wd_packtop) = (-side => 'top');
+my(@wd_packleft) = (-side => 'left');
+
+1;
+
+sub Populate {
+    ### Wait box constructor.  Uses new inherited from base class
+    my($cw, $wdtop, $fm, $bitmap, $txt1, $uframe, $txt2);
+    $cw = shift;
+    $cw->SUPER::Populate(@_);
+
+    ## Create the toplevel window
+    $cw->withdraw;
+    $cw->protocol('WM_DELETE_WINDOW' => sub {});
+    $cw->transient($cw->toplevel);
+
+    ### Set up the status
+    $cw->{Shown} = 0;
+
+    ### Set up the cancel button and text
+    $cw->{cancelroutine} = undef if !defined($cw->{cancelroutine});
+    $cw->{canceltext} = 'Cancel' if !defined($cw->{canceltext});
+
+    ### OK, create the dialog
+    ### Start with the upper frame (which contains two messages)
+    ## And maybe more....
+    $wdtop = $cw->Frame->pack(@wd_fullpack, @wd_packtop);
+
+    $fm = $wdtop->Frame(-borderwidth => 2, -relief => 'raised')
+	    ->pack(@wd_packleft, -ipadx => 20, @wd_fullpack);
+
+    $bitmap = $fm->Label(Name => 'bitmap')
+	    ->pack(@wd_packleft, -ipadx => 36, @wd_fullpack);
+
+    ## Text Frame
+    $fm = $wdtop->Frame(-borderwidth => 2, -relief => 'raised')
+	    ->pack(@wd_packleft, -ipadx => 20, @wd_fullpack);
+
+    $txt1 = $fm->Label(-wraplength => '3i', -justify => 'center',
+		       -textvariable => \$cw->{Configure}{-txt1})
+	    ->pack(@wd_packtop, -pady => 3, @wd_fullpack);
+
+    ### Eventually, I want to create a user configurable frame
+    ### in between the two frames
+    $uframe = $fm->Frame
+	    ->pack(@wd_packtop);
+    $cw->Advertise(uframe => $uframe);
+
+    $cw->{Configure}{-txt2} = "Please Wait"
+	    unless defined($cw->{Configure}{-txt2});
+
+    $txt2 = $fm->Label(-textvariable => \$cw->{Configure}{-txt2})
+	    ->pack(@wd_packtop, @wd_fullpack, -pady => 9);
+
+    ### We'll let the cancel frame and button wait until Show time
+
+    ### Set up configuration
+    $cw->ConfigSpecs(-bitmap	=> [$bitmap, undef, undef, 'hourglass'],
+		     -foreground=> [[$txt1,$txt2], 'foreground','Foreground','black'],
+		     -background=> ['DESCENDANTS', 'background', 'Background',undef],
+		     -font	=> [$txt1,'font','Font','-Adobe-Helvetica-Bold-R-Normal--*-180-*'],
+		     -canceltext=> ['PASSIVE', undef, undef, 'Cancel'],
+		     -cancelroutine=> ['PASSIVE', undef, undef, undef],
+		     -txt1	=> ['PASSIVE', undef, undef, undef],
+		     -txt2	=> ['PASSIVE',undef,undef,undef],
+		     -resizeable => ['PASSIVE',undef,undef,1],
+		     -takefocus => ['SELF', undef, undef, 1]);
+}
+
+sub Version {return $Tk::WaitBox::VERSION;}
+
+sub Show {
+    ## Do last minute configuration and Show the dialog
+    my($wd, @args) = @_;
+
+    if ( defined($wd->{Configure}{-cancelroutine}) &&
+	!defined($wd->{CanFrame})) {
+	my($canFrame) = $wd->Frame (-background => $wd->cget('-background'));
+	$wd->{CanFrame} = $canFrame;
+	$canFrame->pack(-side => 'top', @wd_packtop, -fill => 'both');
+	$canFrame->configure(-cursor => 'top_left_arrow');
+	$canFrame->Button(-text => $wd->{Configure}{-canceltext},
+			  -command => $wd->{Configure}{-cancelroutine})
+		->pack(-padx => 5, -pady => 5,
+		       -ipadx => 5, -ipady => 5);
+    }
+
+    ## Grab the input queue and focus
+    $wd->parent->configure(-cursor => 'watch') if $wd->{Configure}{-takefocus};
+    $wd->configure(-cursor => 'watch');
+    $wd->update;
+
+    my($x) = int( ($wd->screenwidth
+		 - $wd->reqwidth)/2
+		 - $wd->vrootx);
+
+    my($y) = int( ($wd->screenheight
+		 - $wd->reqheight)/2
+		 - $wd->vrooty);
+
+    $wd->geometry("+$x+$y");
+
+    $wd->{Shown} = 1;
+
+    $wd->deiconify;
+    $wd->tkwait('visibility', $wd);
+
+    if ($wd->{Configure}{-takefocus}) {
+	$wd->grab();
+	$wd->focus();
+    }
+    $wd->update;
+
+    return $wd;
+
+}
+
+sub unShow {
+    my($wd) = @_;
+
+    return unless $wd->{Shown};
+    $wd->{CanFrame}->destroy if defined($wd->{CanFrame});
+    $wd->{CanFrame} = undef;
+    $wd->parent->configure(-cursor => 'top_left_arrow');
+
+    $wd->grab('release');
+    $wd->withdraw;
+    $wd->parent->update;
+    $wd->{Shown} = 0;
+}
+
+__END__
 
 =head1 NAME
 
@@ -79,58 +227,64 @@ Configuration may be done at creation or via the configure method.
 =head2 Example Code
 
 =item
+    #!/usr/local/bin/perl -w 
 
- #!/usr/local/bin/perl -w 
+    ## Dependent on Graham Barr's Tk::ProgressBar
+    use strict;
 
- use Tk;
- use Tk::WaitBox;
- use strict;
+    use Tk;
+    use Tk::WaitBox;
+    use Tk::ProgressBar;
 
- my($root) = MainWindow->new;
- my($utxt) = "Initializing...";
+    my($root) = MainWindow->new;
+    $root->withdraw;
+    my($utxt) = "Initializing...";
+    my($percent);
 
- my($wd) = $root->WaitBox(
-	-bitmap =>'questhead', # Default would be 'hourglass'
-	-txt2 => 'tick-tick-tick', #default would be 'Please Wait'
-	-title => 'Takes forever to get service around here',
-	-cancelroutine => sub {
-	    print "\nI'm canceling....\n";
-	    $wd->unShow;
-	    $utxt = undef;
-	});
- $wd->configure(-txt1 => "Hurry up and Wait, my Drill Sergeant told me");
- $wd->configure(-foreground => 'blue',-background => 'white');
+    my($wd);
+    $wd = $root->WaitBox(
+			 -bitmap =>'questhead', # Default would be 'hourglass'
+			 -txt2 => 'tick-tick-tick', #default would be 'Please Wait'
+			 -title => 'Takes forever to get service around here',
+			 -cancelroutine => sub {
+			     print "\nI'm canceling....\n";
+			     $wd->unShow;
+			     $utxt = undef;
+			 });
+    $wd->configure(-txt1 => "Hurry up and Wait, my Drill Sergeant told me");
+    $wd->configure(-foreground => 'blue',-background => 'white');
 
- ### Do something quite boring with the user frame
- my($u) = $wd->{SubWidget}(uframe);
- $u->pack(-expand => 1, -fill => 'both');
- $u->Label(-textvariable => \$utxt)->pack(-expand => 1, -fill => 'both');
+    ### Do something quite boring with the user frame
+    my($u) = $wd->{SubWidget}{uframe};
+    $u->pack(-expand => 1, -fill => 'both');
+    $u->Label(-textvariable => \$utxt)->pack(-expand => 1, -fill => 'both');
 
- ## It would definitely be better to do this with a canvas... this is dumb
- my($base) = $u->Frame(-background =>'gray',
-		       -relief => 'sunken',
-		       -borderwidth => 2,
-		       -height => 20)
-	 ->pack(-side => 'left', -anchor => 'w',-expand => 1,
-		-fill => 'both');
- my($bar) = $base->Frame(-borderwidth => 2,
-			 -relief => 'raised', -height => 20,
-			 -width => 0, -background => 'blue')
-	 ->pack(-fill => 'y', -side => 'left');
+    ## It would definitely be better to do this with a canvas... this is dumb
+    my($bar) = $u->ProgressBar(
+			       -variable => \$percent,
+			       -blocks => 0,
+			       -width => 20,
+			       -colors => [  0 => 'green',
+					     30 => 'yellow',
+					     50 => 'orange',
+					     80 => 'red'],
+			      )
+	    ->pack(-expand =>1, -fill =>'both');
 
- $wd->configure(-canceltext => 'Halt, Cease, Desist'); # default is 'Cancel'
+    $wd->configure(-canceltext => 'Halt, Cease, Desist'); # default is 'Cancel'
 
- $wd->Show;
+    $wd->Show;
 
- for (1..15) {
-     sleep(1);
-     $bar->configure(-width => int($_/15*$base->Width));
-     $utxt = 100*$_/15 . "% Complete";
-     $root->update;
-     last if !defined($utxt);
- }
+    my($diff) = 240;
+    for (1..$diff) {
+	$percent = int($_/$diff*100);
+	$utxt = sprintf("%5.2f%% Complete",$percent);
+	$bar->update;
+	last if !defined($utxt);
+    }
 
- $wd->unShow;
+    sleep(2);
+    $wd->unShow;
 
 =back
 
@@ -143,180 +297,29 @@ Configuration may be done at creation or via the configure method.
 
 uframe is a frame created between the two messages.  It may be used for anything the user has in mind... including exciting cycle wasting displays of sand dropping through an hour glass, Zippy riding either a Gnu or a bronc, et cetera.
 
-Assuming that the WaitBox is referenced by $w, the uframe may be addressed as $w->subwidget{'uframe'}.  Having gotten the address, you can do anything (I think) you would like with it
+Assuming that the WaitBox is referenced by $w, the uframe may be addressed as $w->subwidget{uframe}.  Having gotten the address, you can do anything (I think) you would like with it
+
+=back
+
+=head1 Miscellaneous Methods
+
+=over 4
+
+=item -takefocus
+
+Specifying -takeFocus = 0 will prevent the WaitBox widget from taking focus. Default is to take focus and do an application grab. I'm not sure why, but someone told me it was necessary.
 
 =back
 
 =head1 Author
 
-B<Brent B. Powers, Merrill Lynch (B2Pi)>
- powers@ml.com
+B<Brent B. Powers, (B2Pi)> Powers@B2Pi.com
 
-This code may be distributed under the same conditions as perl itself.
+Copyright(c) 1996-2000 Brent B. Powers. All rights reserved.
+This program is free software, you may redistribute it and/or modify
+it under the same terms as Perl itself.
+
+
 
 
 =cut
-
-###############################################################################
-###############################################################################
-
-package Tk::WaitBox;
-use strict;
-require Tk::Toplevel;
-
-@Tk::WaitBox::ISA = qw (Tk::Toplevel);
-
-Tk::Widget->Construct('WaitBox');
-
-$Tk::WaitBox::VERSION = '1.2';
-
-### A couple of convenience variables
-my(@wd_fullpack) = (-expand => 1, -fill => 'both');
-my(@wd_packtop) = (-side => 'top');
-my(@wd_packleft) = (-side => 'left');
-
-
-sub Populate {
-    ### Wait box constructor.  Uses new inherited from base class
-    my($cw, @args) = @_;
-
-    $cw->SUPER::Populate(@args);
-
-    ## Create the toplevel window
-    $cw->withdraw;
-    $cw->protocol('WM_DELETE_WINDOW' => sub {});
-    $cw->transient($cw->toplevel);
-
-    ### Set up the status
-    $cw->{'Shown'} = 0;
-
-    ### Set up the cancel button and text
-    $cw->{'cancelroutine'} = undef if !defined($cw->{'cancelroutine'});
-    $cw->{'canceltext'} = 'Cancel' if !defined($cw->{'canceltext'});
-
-    ### OK, create the dialog
-    ### Start with the upper frame (which contains two messages)
-    ## And maybe more....
-    my($wdtop) = $cw->Frame;
-    $wdtop->pack(@wd_fullpack, @wd_packtop);
-
-    my($fm) = $wdtop->Frame(-borderwidth => 2, -relief => 'raised');
-    $fm->pack(@wd_packleft, -ipadx => 20, @wd_fullpack);
-
-    my($bitmap) = $fm->Label(Name => 'bitmap');
-    $bitmap->pack(@wd_packleft, -ipadx => 36, @wd_fullpack);
-
-    ## Text Frame
-    my($fm) = $wdtop->Frame(-borderwidth => 2, -relief => 'raised');
-    $fm->pack(@wd_packleft, -ipadx => 20, @wd_fullpack);
-
-    my($txt1) = $fm->Label(-wraplength => '3i', -justify => 'center',
-			     -textvariable => \$cw->{Configure}{-txt1});
-    $txt1->pack(@wd_packtop, -pady => 3, @wd_fullpack);
-
-    ### Eventually, I want to create a user configurable frame
-    ### in between the two frames
-    my($uframe) = $fm->Frame;
-    $uframe->pack(@wd_packtop);
-    $cw->Advertise(uframe => $uframe);
-
-    $cw->{Configure}{-txt2} = "Please Wait"
-	    unless defined($cw->{Configure}{-txt2});
-
-    my($txt2) = $fm->Label(-textvariable => \$cw->{Configure}{-txt2});
-    $txt2->pack(@wd_packtop, @wd_fullpack, -pady => 9);
-
-    ### We'll let the cancel frame and button wait until Show time
-
-    ### Set up configuration
-    $cw->ConfigSpecs(-bitmap	=> [$bitmap, undef, undef, 'hourglass'],
-		     -foreground=> [[$txt1,$txt2], 'foreground','Foreground','black'],
-		     -background=> ['DESCENDANTS', 'background', 'Background',undef],
-		     -font	=> [$txt1,'font','Font','-Adobe-Helvetica-Bold-R-Normal--*-180-*'],
-		     -canceltext=> ['PASSIVE', undef, undef, 'Cancel'],
-		     -cancelroutine=> ['PASSIVE', undef, undef, undef],
-		     -txt1	=> ['PASSIVE', undef, undef, undef],
-		     -txt2	=> ['PASSIVE',undef,undef,undef],
-		     -resizeable => ['PASSIVE',undef,undef,1]);
-}
-
-sub Version {return $Tk::WaitBox::VERSION;}
-
-sub Show {
-    ## Do last minute configuration and Show the dialog
-    my($wd, @args) = @_;
-
-    if ( defined($wd->{Configure}{-cancelroutine}) &&
-	!defined($wd->{'CanFrame'})) {
-	my($canFrame) = $wd->Frame (-background => $wd->cget('-background'));
-	$wd->{'CanFrame'} = $canFrame;
-	$canFrame->pack(-side => 'top', @wd_packtop, -fill => 'both');
-	$canFrame->configure(-cursor => 'top_left_arrow');
-	$canFrame->Button(-text => $wd->{Configure}{-canceltext},
-			  -command => $wd->{Configure}{-cancelroutine})
-		->pack(-padx => 5, -pady => 5,
-		       -ipadx => 5, -ipady => 5);
-    }
-
-    ## Grab the input queue and focus
-    $wd->parent->configure(-cursor => 'watch');
-    $wd->configure(-cursor => 'watch');
-    $wd->update;
-
-    my($x) = int( ($wd->screenwidth
-		 - $wd->reqwidth)/2
-		 - $wd->vrootx);
-
-    my($y) = int( ($wd->screenheight
-		 - $wd->reqheight)/2
-		 - $wd->vrooty);
-
-    $wd->geometry("+$x+$y");
-
-    $wd->{'Shown'} = 1;
-
-    $wd->deiconify;
-    $wd->tkwait('visibility', $wd);
-
-    $wd->grab();
-    $wd->focus();
-    $wd->update;
-
-    return $wd;
-
-}
-
-sub unShow {
-    my($wd) = @_;
-
-    return if !$wd->{'Shown'};
-    $wd->{'CanFrame'}->destroy if (defined($wd->{'CanFrame'}));
-    $wd->{'CanFrame'} = undef;
-    $wd->parent->configure(-cursor => 'top_left_arrow');
-
-    $wd->grab('release');
-    $wd->withdraw;
-    $wd->parent->update;
-    $wd->{'Shown'} = 0;
-}
-
-1;
-
-__END__
-From  powers@swaps.ml.com  Fri Mar  1 07:19:41 1996 
-Return-Path: <powers@swaps.ml.com> 
-From: powers@swaps.ml.com (Brent B. Powers Swaps Programmer X2293)
-Date: Fri, 1 Mar 1996 02:19:28 -0500 
-Message-Id: <199603010719.CAA16433@swapsdvlp02.ny-swaps-develop.ml.com> 
-To: nik@tiuk.ti.com 
-Subject: WaitBox.pm 
-P-From: "Brent B. Powers Swaps Programmer x2293" <powers@swaps.ml.com> 
-
-Greetings.  Attached is a slightly updated version of WaitBox.pm to go
-out (hopefully) with the next release of Tk.  It now works properly
-under perl5.002gamma.  Could you please let me know that you did get
-this... We're having some trouble with mail gateways.
-
-Cheers.
-
-Brent B. Powers             Merrill Lynch          powers@swaps.ml.com
